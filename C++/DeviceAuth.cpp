@@ -1,4 +1,4 @@
-#include "DeviceAuth.h"
+#include "DeviceAuth.h"					// TODO: Rewrite according to the directory hierarchy
 
 //==========================================================================================================================
 // *** Title ***
@@ -25,22 +25,29 @@
 // 7. Some WMI classes may be discontinued in the future.
 // *** Update History ***
 // August 12, 2023: Created
+// September 16, 2025: Replace deprecated functions
 //==========================================================================================================================
 
 BOOL CDeviceAuthManager::GetClassObject(LPCWSTR lpClassName, IEnumWbemClassObject*& lpEnumerator, LPCWSTR lpWhereQuery = L"")
 {
 	IWbemClassObject* lpObj = NULL;
 	ULONG uResult = 0;
-	WCHAR lpQuery[MAXBYTE];
-	ZeroMemory(lpQuery, sizeof(lpQuery) / sizeof(WCHAR));
+	WCHAR lpQuery[MAX_LOADSTRING] = { 0 };
+	size_t whereQuerySize;
 
-	if (wcslen(lpWhereQuery) == 0)
+	// Failed.
+	if (FAILED(StringCchLength(lpWhereQuery, STRSAFE_MAX_CCH, &whereQuerySize)))
 	{
-		wsprintf(lpQuery, WQUERY_BASIC, lpClassName);
+		return FALSE;
+	}
+
+	if (whereQuerySize == 0)
+	{
+		StringCchPrintf(lpQuery, MAX_LOADSTRING, WQUERY_BASIC, lpClassName);
 	}
 	else
 	{
-		wsprintf(lpQuery, WQUERY_WHERE, lpClassName, lpWhereQuery);
+		StringCchPrintf(lpQuery, MAX_LOADSTRING, WQUERY_WHERE, lpClassName, lpWhereQuery);
 	}
 
 	hRes = lpServices->ExecQuery(
@@ -201,6 +208,7 @@ BOOL CHardwareAuth::AuthComputerSerialNumber(BOOL& bResult, int iCount, ...)
 
 	return TRUE;
 }
+
 BOOL CHardwareAuth::AuthBaseBoardSerialNumber(BOOL& bResult, int iCount, ...)
 {
 	bResult = FALSE;
@@ -242,13 +250,14 @@ BOOL CHardwareAuth::AuthBaseBoardSerialNumber(BOOL& bResult, int iCount, ...)
 
 	return TRUE;
 }
+
 BOOL CHardwareAuth::AuthSystemDisk(BOOL& bResult, int iCount, ...)
 {
 	bResult = FALSE;
 	IEnumWbemClassObject* lpEnumerator = NULL;
-	WCHAR lpWhere[MAXBYTE];
-	ZeroMemory(lpWhere, sizeof(lpWhere) / sizeof(WCHAR));
-	wsprintf(lpWhere, WFORMULA_MATCH, WPROP_INTERFACE, WPROPVAL_IDE);
+	WCHAR lpWhere[MAX_LOADSTRING] = { 0 };
+
+	StringCchPrintf(lpWhere, MAX_LOADSTRING, WFORMULA_MATCH, WPROP_INTERFACE, WPROPVAL_IDE);
 	if (GetClassObject(WCLASS_DISK, lpEnumerator, lpWhere))
 	{
 		IWbemClassObject* lpObj = NULL;
@@ -290,9 +299,9 @@ BOOL CHardwareAuth::AuthSystemDiskEx(BOOL& bResult, int iCount, ...)
 {
 	bResult = FALSE;
 	IEnumWbemClassObject* lpEnumerator = NULL;
-	WCHAR lpWhere[MAXBYTE];
-	ZeroMemory(lpWhere, sizeof(lpWhere) / sizeof(WCHAR));
-	wsprintf(lpWhere, WFORMULA_MATCH, WPROP_INTERFACE, WPROPVAL_IDE);
+	WCHAR lpWhere[MAX_LOADSTRING] = { 0 };
+
+	StringCchPrintf(lpWhere, MAX_LOADSTRING, WFORMULA_MATCH, WPROP_INTERFACE, WPROPVAL_IDE);
 	if (GetClassObject(WCLASS_DISK, lpEnumerator, lpWhere))
 	{
 		IWbemClassObject* lpObj = NULL;
@@ -334,9 +343,9 @@ BOOL CHardwareAuth::AuthExternalDisk(BOOL& bResult, int iCount, ...)
 {
 	bResult = FALSE;
 	IEnumWbemClassObject* lpEnumerator = NULL;
-	WCHAR lpWhere[MAXBYTE];
-	ZeroMemory(lpWhere, sizeof(lpWhere) / sizeof(WCHAR));
-	wsprintf(lpWhere, WFORMULA_MISSMATCH, WPROP_INTERFACE, WPROPVAL_IDE);
+	WCHAR lpWhere[MAX_LOADSTRING] = { 0 };
+
+	StringCchPrintf(lpWhere, MAX_LOADSTRING, WFORMULA_MISSMATCH, WPROP_INTERFACE, WPROPVAL_IDE);
 	if (GetClassObject(WCLASS_DISK, lpEnumerator, lpWhere))
 	{
 		IWbemClassObject* lpObj = NULL;
@@ -378,9 +387,9 @@ BOOL CHardwareAuth::AuthExternalDiskEx(BOOL& bResult, int iCount, ...)
 {
 	bResult = FALSE;
 	IEnumWbemClassObject* lpEnumerator = NULL;
-	WCHAR lpWhere[MAXBYTE];
-	ZeroMemory(lpWhere, sizeof(lpWhere) / sizeof(WCHAR));
-	wsprintf(lpWhere, WFORMULA_MISSMATCH, WPROP_INTERFACE, WPROPVAL_IDE);
+	WCHAR lpWhere[MAX_LOADSTRING] = { 0 };
+
+	StringCchPrintf(lpWhere, MAX_LOADSTRING, WFORMULA_MISSMATCH, WPROP_INTERFACE, WPROPVAL_IDE);
 	if (GetClassObject(WCLASS_DISK, lpEnumerator, lpWhere))
 	{
 		IWbemClassObject* lpObj = NULL;
@@ -464,9 +473,9 @@ BOOL CSoftwareAuth::AuthUserAccountSID(BOOL& bResult, int iCount, ...)
 	bResult = FALSE;
 
 	LPWSTR lpSidBuf;
-	WCHAR lpUser[MAXBYTE];
-	WCHAR lpDomain[MAXBYTE];
-	BYTE szSidBuf[MAXBYTE];
+	WCHAR lpUser[MAX_LOADSTRING];
+	WCHAR lpDomain[MAX_LOADSTRING];
+	BYTE szSidBuf[MAX_LOADSTRING];
 
 	DWORD dUserSize = sizeof(lpUser) / sizeof(WCHAR);
 	DWORD dDomainSize = sizeof(lpDomain) / sizeof(WCHAR);

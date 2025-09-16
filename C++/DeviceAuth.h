@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Windows.h>
+#include <strsafe.h>
 
 #define _WIN32_DCOM
 #include <comdef.h>
@@ -22,6 +23,8 @@
 #define WPROPVAL_IDE						L"IDE"
 #define WFORMULA_MATCH						L"%s = '%s'"
 #define WFORMULA_MISSMATCH					L"%s <> '%s'"
+
+#define MAX_LOADSTRING						MAXBYTE
 
 //==========================================================================================================================
 // *** Title ***
@@ -48,6 +51,7 @@
 // 7. Some WMI classes may be discontinued in the future.
 // *** Update History ***
 // August 12, 2023: Created
+// September 16, 2025: Replace deprecated functions
 //==========================================================================================================================
 
 #if !UNICODE
