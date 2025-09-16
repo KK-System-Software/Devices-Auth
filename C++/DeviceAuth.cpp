@@ -1,4 +1,5 @@
-#include "DeviceAuth.h"					// TODO: Rewrite according to the directory hierarchy
+// TODO: Rewrite according to the directory hierarchy
+#include "DeviceAuth.h"
 
 //==========================================================================================================================
 // *** Title ***
@@ -17,22 +18,24 @@
 // This allows applications to be restricted from launching or restricting functionality outside of certain environments.
 // *** Notes ***
 // 1. Platforms other than Windows are not supported.
-// 2. It cannot be used on Windows, even on Windows 98 or earlier.
+// 2. It cannot be used on except Windows, even on Windows 98 or earlier.
 // 3. Non-Unicode environments are not supported.
-// 4. It may or may not work properly in environments where WMI is disabled.
-// 5. If parts are replaced for repair or other reasons, authentication may fail.
-// 6. Some devices may not function properly with the authentication method.
-// 7. Some WMI classes may be discontinued in the future.
+// 4. Not available in environments prior to C++17.
+// 5. It may or may not work properly in environments where WMI is disabled.
+// 6. If parts are replaced for repair or other reasons, authentication may fail.
+// 7. Some devices may not function properly with the authentication method.
+// 8. Some WMI classes may be discontinued in the future.
 // *** Update History ***
 // August 12, 2023: Created
 // September 16, 2025: Replace deprecated functions
+// September 16, 2025: Changes to some function signatures and internal processing efficiency improvements.
 //==========================================================================================================================
 
 BOOL CDeviceAuthManager::GetClassObject(LPCWSTR lpClassName, IEnumWbemClassObject*& lpEnumerator, LPCWSTR lpWhereQuery = L"")
 {
 	IWbemClassObject* lpObj = NULL;
 	ULONG uResult = 0;
-	WCHAR lpQuery[MAX_LOADSTRING] = { 0 };
+	WCHAR lpQuery[MAX_QUERY] = { 0 };
 	size_t whereQuerySize;
 
 	// Failed.
@@ -43,11 +46,11 @@ BOOL CDeviceAuthManager::GetClassObject(LPCWSTR lpClassName, IEnumWbemClassObjec
 
 	if (whereQuerySize == 0)
 	{
-		StringCchPrintf(lpQuery, MAX_LOADSTRING, WQUERY_BASIC, lpClassName);
+		StringCchPrintf(lpQuery, MAX_QUERY, WQUERY_BASIC, lpClassName);
 	}
 	else
 	{
-		StringCchPrintf(lpQuery, MAX_LOADSTRING, WQUERY_WHERE, lpClassName, lpWhereQuery);
+		StringCchPrintf(lpQuery, MAX_QUERY, WQUERY_WHERE, lpClassName, lpWhereQuery);
 	}
 
 	hRes = lpServices->ExecQuery(
@@ -58,6 +61,7 @@ BOOL CDeviceAuthManager::GetClassObject(LPCWSTR lpClassName, IEnumWbemClassObjec
 		&lpEnumerator
 	);
 
+	// Failed.
 	if (FAILED(hRes))
 	{
 		lpServices->Release();
@@ -100,6 +104,7 @@ BOOL CDeviceAuthManager::ConnectSetup()
 		(LPVOID*)&lpLoc
 	);
 
+	// Failed.
 	if (FAILED(hRes))
 	{
 		CoUninitialize();
@@ -117,6 +122,7 @@ BOOL CDeviceAuthManager::ConnectSetup()
 		&lpServices
 	);
 
+	// Failed.
 	if (FAILED(hRes))
 	{
 		lpLoc->Release();
@@ -135,6 +141,7 @@ BOOL CDeviceAuthManager::ConnectSetup()
 		EOAC_NONE
 	);
 
+	// Failed.
 	if (FAILED(hRes))
 	{
 		lpServices->Release();
@@ -159,19 +166,30 @@ VOID CDeviceAuthManager::DisconnectWMI()
 
 	CoUninitialize();
 }
+
 CDeviceAuthManager::CDeviceAuthManager()
 {
 	ConnectSetup();
 }
+
 CDeviceAuthManager::~CDeviceAuthManager()
 {
 	DisconnectWMI();
 }
-BOOL CHardwareAuth::AuthComputerSerialNumber(BOOL& bResult, int iCount, ...)
+
+BOOL CDeviceAuthManager::VerifySerialNumber(initializer_list<wstring_view> serialNumbers, LPCWSTR lpWMIClass, LPCWSTR lpWMIProperty,
+	BOOL bWhereQuery = FALSE, BOOL bEqual = TRUE, LPCWSTR lpWhereLeftSide = L"", LPCWSTR lpWhereRightSide = L"")
 {
-	bResult = FALSE;
+	BOOL bResult = FALSE;
 	IEnumWbemClassObject* lpEnumerator = NULL;
-	if (GetClassObject(WCLASS_BIOS, lpEnumerator))
+	WCHAR lpWhere[MAX_QUERY] = { 0 };
+
+	if (bWhereQuery)
+	{
+		StringCchPrintf(lpWhere, MAX_QUERY, (bEqual ? WFORMULA_MATCH : WFORMULA_MISSMATCH), lpWhereLeftSide, lpWhereRightSide);
+	}
+
+	if (GetClassObject(lpWMIClass, lpEnumerator, (bWhereQuery ? lpWhere : L"")))
 	{
 		IWbemClassObject* lpObj = NULL;
 		ULONG uResult = 0;
@@ -179,22 +197,15 @@ BOOL CHardwareAuth::AuthComputerSerialNumber(BOOL& bResult, int iCount, ...)
 		{
 			VARIANT vtProp;
 			VariantInit(&vtProp);
-			if (lpObj->Get(WPROP_SERIALNUMBER, NULL, &vtProp, NULL, NULL) == NO_ERROR)
+			if (lpObj->Get(lpWMIProperty, NULL, &vtProp, NULL, NULL) == NO_ERROR)
 			{
-				va_list args;
-				va_start(args, iCount);
-				LPCWSTR lpValue;
-
-				for (int i = 0; i < iCount; i++)
-				{
-					lpValue = va_arg(args, LPCWSTR);
-					if (wcscmp(lpValue, vtProp.bstrVal) == 0)
-					{
+				std::wstring ws(vtProp.bstrVal ? vtProp.bstrVal : L"");
+				for (auto candidate : serialNumbers) {
+					if (ws == candidate) {
 						bResult = TRUE;
 						break;
 					}
 				}
-				va_end(args);
 			}
 
 			VariantClear(&vtProp);
@@ -206,276 +217,56 @@ BOOL CHardwareAuth::AuthComputerSerialNumber(BOOL& bResult, int iCount, ...)
 		return FALSE;
 	}
 
-	return TRUE;
+	return bResult;
 }
 
-BOOL CHardwareAuth::AuthBaseBoardSerialNumber(BOOL& bResult, int iCount, ...)
+BOOL CHardwareAuth::AuthComputerSerialNumber(initializer_list<wstring_view> serialNumbers)
 {
-	bResult = FALSE;
-	IEnumWbemClassObject* lpEnumerator = NULL;
-	if (GetClassObject(WCLASS_BASEBOARD, lpEnumerator))
-	{
-		IWbemClassObject* lpObj = NULL;
-		ULONG uResult = 0;
-		while (lpEnumerator->Next(WBEM_INFINITE, 1, &lpObj, &uResult) == S_OK)
-		{
-			VARIANT vtProp;
-			VariantInit(&vtProp);
-			if (lpObj->Get(WPROP_SERIALNUMBER, NULL, &vtProp, NULL, NULL) == NO_ERROR)
-			{
-				va_list args;
-				va_start(args, iCount);
-				LPCWSTR lpValue;
-
-				for (int i = 0; i < iCount; i++)
-				{
-					lpValue = va_arg(args, LPCWSTR);
-					if (wcscmp(lpValue, vtProp.bstrVal) == 0)
-					{
-						bResult = TRUE;
-						break;
-					}
-				}
-				va_end(args);
-			}
-
-			VariantClear(&vtProp);
-			lpObj->Release();
-		}
-	}
-	else
-	{
-		return FALSE;
-	}
-
-	return TRUE;
+	return VerifySerialNumber(serialNumbers, WCLASS_BIOS, WPROP_SERIALNUMBER);
 }
 
-BOOL CHardwareAuth::AuthSystemDisk(BOOL& bResult, int iCount, ...)
+BOOL CHardwareAuth::AuthBaseBoardSerialNumber(initializer_list<wstring_view> serialNumbers)
 {
-	bResult = FALSE;
-	IEnumWbemClassObject* lpEnumerator = NULL;
-	WCHAR lpWhere[MAX_LOADSTRING] = { 0 };
-
-	StringCchPrintf(lpWhere, MAX_LOADSTRING, WFORMULA_MATCH, WPROP_INTERFACE, WPROPVAL_IDE);
-	if (GetClassObject(WCLASS_DISK, lpEnumerator, lpWhere))
-	{
-		IWbemClassObject* lpObj = NULL;
-		ULONG uResult = 0;
-		while (lpEnumerator->Next(WBEM_INFINITE, 1, &lpObj, &uResult) == S_OK)
-		{
-			VARIANT vtProp;
-			VariantInit(&vtProp);
-			if (lpObj->Get(WPROP_SERIALNUMBER, NULL, &vtProp, NULL, NULL) == NO_ERROR)
-			{
-				va_list args;
-				va_start(args, iCount);
-				LPCWSTR lpValue;
-
-				for (int i = 0; i < iCount; i++)
-				{
-					lpValue = va_arg(args, LPCWSTR);
-					if (wcscmp(lpValue, vtProp.bstrVal) == 0)
-					{
-						bResult = TRUE;
-						break;
-					}
-				}
-				va_end(args);
-			}
-
-			VariantClear(&vtProp);
-			lpObj->Release();
-		}
-	}
-	else
-	{
-		return FALSE;
-	}
-
-	return TRUE;
+	return VerifySerialNumber(serialNumbers, WCLASS_BASEBOARD, WPROP_SERIALNUMBER);
 }
-BOOL CHardwareAuth::AuthSystemDiskEx(BOOL& bResult, int iCount, ...)
+
+BOOL CHardwareAuth::AuthSystemDisk(initializer_list<wstring_view> serialNumbers)
 {
-	bResult = FALSE;
-	IEnumWbemClassObject* lpEnumerator = NULL;
-	WCHAR lpWhere[MAX_LOADSTRING] = { 0 };
-
-	StringCchPrintf(lpWhere, MAX_LOADSTRING, WFORMULA_MATCH, WPROP_INTERFACE, WPROPVAL_IDE);
-	if (GetClassObject(WCLASS_DISK, lpEnumerator, lpWhere))
-	{
-		IWbemClassObject* lpObj = NULL;
-		ULONG uResult = 0;
-		while (lpEnumerator->Next(WBEM_INFINITE, 1, &lpObj, &uResult) == S_OK)
-		{
-			VARIANT vtProp;
-			VariantInit(&vtProp);
-			if (lpObj->Get(WPROP_PNPDEVICEID, NULL, &vtProp, NULL, NULL) == NO_ERROR)
-			{
-				va_list args;
-				va_start(args, iCount);
-				LPCWSTR lpValue;
-
-				for (int i = 0; i < iCount; i++)
-				{
-					lpValue = va_arg(args, LPCWSTR);
-					if (wcscmp(lpValue, vtProp.bstrVal) == 0)
-					{
-						bResult = TRUE;
-						break;
-					}
-				}
-				va_end(args);
-			}
-
-			VariantClear(&vtProp);
-			lpObj->Release();
-		}
-	}
-	else
-	{
-		return FALSE;
-	}
-
-	return TRUE;
+	return VerifySerialNumber(serialNumbers, WCLASS_DISK, WPROP_SERIALNUMBER,
+		TRUE, TRUE, WPROP_INTERFACE, WPROPVAL_IDE);
 }
-BOOL CHardwareAuth::AuthExternalDisk(BOOL& bResult, int iCount, ...)
+
+BOOL CHardwareAuth::AuthSystemDiskEx(initializer_list<wstring_view> serialNumbers)
 {
-	bResult = FALSE;
-	IEnumWbemClassObject* lpEnumerator = NULL;
-	WCHAR lpWhere[MAX_LOADSTRING] = { 0 };
-
-	StringCchPrintf(lpWhere, MAX_LOADSTRING, WFORMULA_MISSMATCH, WPROP_INTERFACE, WPROPVAL_IDE);
-	if (GetClassObject(WCLASS_DISK, lpEnumerator, lpWhere))
-	{
-		IWbemClassObject* lpObj = NULL;
-		ULONG uResult = 0;
-		while (lpEnumerator->Next(WBEM_INFINITE, 1, &lpObj, &uResult) == S_OK)
-		{
-			VARIANT vtProp;
-			VariantInit(&vtProp);
-			if (lpObj->Get(WPROP_SERIALNUMBER, NULL, &vtProp, NULL, NULL) == NO_ERROR)
-			{
-				va_list args;
-				va_start(args, iCount);
-				LPCWSTR lpValue;
-
-				for (int i = 0; i < iCount; i++)
-				{
-					lpValue = va_arg(args, LPCWSTR);
-					if (wcscmp(lpValue, vtProp.bstrVal) == 0)
-					{
-						bResult = TRUE;
-						break;
-					}
-				}
-				va_end(args);
-			}
-
-			VariantClear(&vtProp);
-			lpObj->Release();
-		}
-	}
-	else
-	{
-		return FALSE;
-	}
-
-	return TRUE;
+	return VerifySerialNumber(serialNumbers, WCLASS_DISK, WPROP_PNPDEVICEID,
+		TRUE, TRUE, WPROP_INTERFACE, WPROPVAL_IDE);
 }
-BOOL CHardwareAuth::AuthExternalDiskEx(BOOL& bResult, int iCount, ...)
+
+BOOL CHardwareAuth::AuthExternalDisk(initializer_list<wstring_view> serialNumbers)
 {
-	bResult = FALSE;
-	IEnumWbemClassObject* lpEnumerator = NULL;
-	WCHAR lpWhere[MAX_LOADSTRING] = { 0 };
-
-	StringCchPrintf(lpWhere, MAX_LOADSTRING, WFORMULA_MISSMATCH, WPROP_INTERFACE, WPROPVAL_IDE);
-	if (GetClassObject(WCLASS_DISK, lpEnumerator, lpWhere))
-	{
-		IWbemClassObject* lpObj = NULL;
-		ULONG uResult = 0;
-		while (lpEnumerator->Next(WBEM_INFINITE, 1, &lpObj, &uResult) == S_OK)
-		{
-			VARIANT vtProp;
-			VariantInit(&vtProp);
-			if (lpObj->Get(WPROP_PNPDEVICEID, NULL, &vtProp, NULL, NULL) == NO_ERROR)
-			{
-				va_list args;
-				va_start(args, iCount);
-				LPCWSTR lpValue;
-
-				for (int i = 0; i < iCount; i++)
-				{
-					lpValue = va_arg(args, LPCWSTR);
-					if (wcscmp(lpValue, vtProp.bstrVal) == 0)
-					{
-						bResult = TRUE;
-						break;
-					}
-				}
-				va_end(args);
-			}
-
-			VariantClear(&vtProp);
-			lpObj->Release();
-		}
-	}
-	else
-	{
-		return FALSE;
-	}
-
-	return TRUE;
+	return VerifySerialNumber(serialNumbers, WCLASS_DISK, WPROP_SERIALNUMBER,
+		TRUE, FALSE, WPROP_INTERFACE, WPROPVAL_IDE);
 }
-BOOL CSoftwareAuth::AuthWindowsSerialNumber(BOOL& bResult, int iCount, ...)
+
+BOOL CHardwareAuth::AuthExternalDiskEx(initializer_list<wstring_view> serialNumbers)
 {
-	bResult = FALSE;
-	IEnumWbemClassObject* lpEnumerator = NULL;
-	if (GetClassObject(WCLASS_OS, lpEnumerator))
-	{
-		IWbemClassObject* lpObj = NULL;
-		ULONG uResult = 0;
-		while (lpEnumerator->Next(WBEM_INFINITE, 1, &lpObj, &uResult) == S_OK)
-		{
-			VARIANT vtProp;
-			VariantInit(&vtProp);
-			if (lpObj->Get(WPROP_SERIALNUMBER, NULL, &vtProp, NULL, NULL) == NO_ERROR)
-			{
-				va_list args;
-				va_start(args, iCount);
-				LPCWSTR lpValue;
-
-				for (int i = 0; i < iCount; i++)
-				{
-					lpValue = va_arg(args, LPCWSTR);
-					if (lstrcmp(lpValue, vtProp.bstrVal) == 0)
-					{
-						bResult = TRUE;
-						break;
-					}
-				}
-				va_end(args);
-			}
-
-			VariantClear(&vtProp);
-			lpObj->Release();
-		}
-	}
-	else
-	{
-		return FALSE;
-	}
-
-	return TRUE;
+	return VerifySerialNumber(serialNumbers, WCLASS_DISK, WPROP_PNPDEVICEID,
+		TRUE, FALSE, WPROP_INTERFACE, WPROPVAL_IDE);
 }
-BOOL CSoftwareAuth::AuthUserAccountSID(BOOL& bResult, int iCount, ...)
+
+BOOL CSoftwareAuth::AuthWindowsSerialNumber(initializer_list<wstring_view> serialNumbers)
 {
-	bResult = FALSE;
+	return VerifySerialNumber(serialNumbers, WCLASS_OS, WPROP_SERIALNUMBER);
+}
+
+BOOL CSoftwareAuth::AuthUserAccountSID(initializer_list<wstring_view> serialNumbers)
+{
+	BOOL bResult = FALSE;
 
 	LPWSTR lpSidBuf;
-	WCHAR lpUser[MAX_LOADSTRING];
-	WCHAR lpDomain[MAX_LOADSTRING];
-	BYTE szSidBuf[MAX_LOADSTRING];
+	WCHAR lpUser[MAX_USER];
+	WCHAR lpDomain[MAX_USER];
+	BYTE szSidBuf[MAX_USERSID];
 
 	DWORD dUserSize = sizeof(lpUser) / sizeof(WCHAR);
 	DWORD dDomainSize = sizeof(lpDomain) / sizeof(WCHAR);
@@ -503,23 +294,18 @@ BOOL CSoftwareAuth::AuthUserAccountSID(BOOL& bResult, int iCount, ...)
 		return FALSE;
 	}
 
-	va_list args;
-	va_start(args, iCount);
-	LPCWSTR lpValue;
-	for (int i = 0; i < iCount; i++)
+	std::wstring ws;
+	for (auto ws : serialNumbers)
 	{
-		lpValue = va_arg(args, LPCWSTR);
-		if (wcscmp(lpValue, lpSidBuf) == 0)
+		if (ws == lpSidBuf)
 		{
 			bResult = TRUE;
 			break;
 		}
 	}
-
-	va_end(args);
 	LocalFree(lpSidBuf);
 
-	return TRUE;
+	return bResult;
 }
 BOOL CSoftwareAuth::AuthUserAccount(LPCWSTR lpUser, LPCWSTR lpDomain, LPCWSTR lpPassword, HANDLE& hToken)
 {
