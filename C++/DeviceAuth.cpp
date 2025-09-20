@@ -29,6 +29,7 @@
 // August 12, 2023: Created
 // September 16, 2025: Replace deprecated functions
 // September 16, 2025: Changes to some function signatures and internal processing efficiency improvements.
+// September 20, 2025: Remove declarations of unused local variables.
 //==========================================================================================================================
 
 BOOL CDeviceAuthManager::GetClassObject(LPCWSTR lpClassName, IEnumWbemClassObject*& lpEnumerator, LPCWSTR lpWhereQuery = L"")
@@ -294,7 +295,6 @@ BOOL CSoftwareAuth::AuthUserAccountSID(initializer_list<wstring_view> serialNumb
 		return FALSE;
 	}
 
-	std::wstring ws;
 	for (auto ws : serialNumbers)
 	{
 		if (ws == lpSidBuf)
